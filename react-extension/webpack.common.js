@@ -7,7 +7,7 @@ module.exports = {
     devtool: 'cheap-module-source-map',
     entry: {
         popup: path.resolve('./src/popup/popup.tsx'),
-        contentScript: path.resolve('./src/contentScript/index.tsx'),
+        contentScript: path.resolve('./src/contentScript/contentScript.tsx'),
         background: path.resolve('./src/background/background.ts'),
     },
     module: {
@@ -16,8 +16,6 @@ module.exports = {
                 use : 'ts-loader',
                 test: /\.tsx$/,
                 exclude: /node_modules/
-                
-
             },
             {
                 test: /\.svg$/,
@@ -41,7 +39,7 @@ module.exports = {
         }),
 
         new htmlPlugin({
-            title: 'GitRev',
+            title: 'PeaceMaker',
             //template: path.resolve('src/index.html'),
             filename: 'popup.html',
             chunks: ['popup']
@@ -51,14 +49,21 @@ module.exports = {
         extensions: ['.tsx', '.ts', '.js']
     },
     output: {
-        filename: '[name].js',
+        path: path.resolve(__dirname, "dist"),
+        filename: "[name].js",
     },
     optimization: {
         splitChunks: {
-            chunks(chunk) {
-                return chunk.name !== 'contentScript';
-            }
-        }
+            chunks: "all", // Inclui todos os chunks
+            cacheGroups: {
+                contentScript: {
+                    name: "contentScript", // Garante que o contentScript seja gerado corretamente
+                    test: /[\\/]src[\\/]contentScript[\\/]/,
+                    chunks: "initial",
+                    enforce: true,
+                },
+            },
+        },
     }
     
 };

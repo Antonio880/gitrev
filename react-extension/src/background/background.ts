@@ -1,33 +1,76 @@
+const extensionBaseUrl = "http://localhost:3000/auth/github";
 
 chrome.runtime.onInstalled.addListener(() => {
-    console.log('onInstalled...');
+  authenticateWithGitHub();
 });
 
-chrome.bookmarks.onCreated.addListener(() => {
-    console.log('onCreated...');
+async function authenticateWithGitHub() {
+  const authResponse = await fetch(`${extensionBaseUrl}`);
+  const authData = await authResponse.json();
+
+  // Abre a aba para autenticação
+  chrome.tabs.create({ url: authData.url }, function (tab) {
+    console.log("Aba criada para autenticação:", tab);
+
+    // Escuta a mensagem com o token (enviada pelo script injetado)
+    chrome.runtime.onMessage.addListener(function listener(
+      message,
+      sender,
+      sendResponse
+    ) {
+      if (message.type === "github-auth-token") {
+        console.log("Mensagem recebida com token:", message);
+
+        const token = message.token;
+
+        if (token) {
+          // Salva o token no chrome.storage
+          chrome.storage.local.set({ authToken: token }, () => {
+            console.log("Token armazenado com sucesso:", token);
+          });
+        } else {
+          console.error("Token não encontrado na mensagem.");
+        }
+
+        sendResponse({ success: true });
+        // Remove o listener após processar a mensagem
+        chrome.runtime.onMessage.removeListener(listener);
+      }
+    });
+  });
+}
+
+// Escuta atualizações nas abas
+chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tabs) {
+  if (
+    changeInfo.status === "complete" &&
+    tabs.url.includes("auth/github/callback")
+  ) {
+    // Injeta o código diretamente na aba
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      func: extractTokenAndSendMessage, // Função a ser injetada
+    });
+  }else{
+    console.log("Callback não detectado")
+  }
 });
 
-const clientId = "841342fed95586ded8a1";
-// New code
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.action === 'authenticate') {
-        const redirectUri = chrome.identity.getRedirectURL('auth');
-        const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=read:user,public_repo`;
+// Função injetada diretamente na página
+function extractTokenAndSendMessage() {
+  // Extraia o token da página (ajuste o seletor se necessário)
+  const tokenElement = document.querySelector("body");
+  const token = tokenElement?.textContent?.match(
+    /"access_token":"([^"]+)"/
+  )?.[1];
 
-        chrome.identity.launchWebAuthFlow({
-            'url': authUrl,
-            'interactive': true
-        }, function (responseUrl) {
-            if (chrome.runtime.lastError) {
-                sendResponse({error: chrome.runtime.lastError});
-                return;
-            }
-            const url = new URL(responseUrl);
-            const code = url.searchParams.get('code');
-            sendResponse({code: code});
-        });
-    }
-    return true;  // To ensure async sendResponse works
-});
-
-
+  if (token) {
+    // Envie o token para a extensão
+    chrome.runtime.sendMessage({
+      type: "github-auth-token",
+      token: token,
+    });
+  } else {
+    console.error("Token não encontrado na página.");
+  }
+}
